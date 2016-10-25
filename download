@@ -1,0 +1,49 @@
+#!/bin/sh
+set -eu
+
+TARGET_PREFIX="arm-oe-linux-gnueabi-"
+
+TARGET_ROOT="$PWD"
+SYSROOT="$TARGET_ROOT/sysroot"
+mkdir -p "$SYSROOT"
+
+RUSTREV=`rustc -Vv|grep ^commit-hash | cut -d ' ' -f 2`
+if [ "$RUSTREV" = "unknown" -o -z "$RUSTREV" ]; then
+	RUSTREV="1a2eaffb63aefba666f55abd992c5e2900654f06"
+fi
+
+export CFG_VER_HASH="$RUSTREV"
+export CFG_SHORT_VER_HASH="echo $RUSTREV | head -c 9"
+
+export RUST_TARGET_PATH="$TARGET_ROOT"
+
+cd `mktemp -d "$SYSROOT/build.XXXXXXXX"`
+echo "$PWD"
+
+wget "https://github.com/rust-lang/rust/archive/$RUSTREV.tar.gz" -O - | tar xz
+
+cd rust-$RUSTREV
+curl https://github.com/rust-lang/rust/compare/master...arcnmx:cargo-rbuild.diff | git apply
+#curl https://github.com/rust-lang/rust/compare/master...arcnmx:libstd-sys-flat.diff | git apply
+
+unset RUSTC_SYSROOT
+unset RUSTC
+
+set +u
+. ./rbuild
+STD_FEATURES=
+rbuild_target "$TARGET"
+rbuild_alloc none
+rbuild_profile release
+rbuild_cargo build -p core -v
+rbuild_cargo build -p alloc -v
+rbuild_cargo build -p collections -v
+#rbuild_cargo build -p std
+#export TARGET_CFLAGS="$CFLAGS --sysroot=$B_SYSROOT"
+#export TARGET_CC="${TARGET_PREFIX}gcc"
+#export CFLAGS="$TARGET_CFLAGS"
+#export CC="$CC"
+#export CARGO_TARGET_DIR="$PWD/target"
+
+rbuild_gensysroot "$SYSROOT"
+cp rustc-sysroot "$SYSROOT"
